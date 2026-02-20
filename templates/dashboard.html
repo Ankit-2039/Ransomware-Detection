@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ransomware Detection Dashboard</title>
+    <link rel="stylesheet" href="../static/css/style.css">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ Ransomware Detection System</h1>
+            <p>Real-time monitoring and threat detection dashboard</p>
+            <div class="status">
+                <div class="stat">
+                    <span class="stat-value" id="total-detections">0</span>
+                    <span class="stat-label">Total Threats Detected</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="total-monitored">0</span>
+                    <span class="stat-label">Files Monitored</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="malware-count">0</span>
+                    <span class="stat-label">Malware Blocked</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content">
+            <!-- Threat Logs Table -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">🚨 Threat Logs</span>
+                    <div class="btn-group">
+                        <button class="btn-secondary" onclick="downloadThreats()">📥 Download</button>
+                        <button class="btn-danger" onclick="clearThreats()">🗑️ Clear</button>
+                    </div>
+                </div>
+                <div id="threat-table-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No threats detected yet</p>
+                    </div>
+                </div>
+                <div class="pagination" id="threat-pagination"></div>
+            </div>
+
+            <!-- Monitor Logs Table -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">📊 Monitor Logs</span>
+                    <div class="btn-group">
+                        <button class="btn-secondary" onclick="downloadMonitors()">📥 Download</button>
+                        <button class="btn-danger" onclick="clearMonitors()">🗑️ Clear</button>
+                    </div>
+                </div>
+                <div id="monitor-table-container">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No files monitored yet</p>
+                    </div>
+                </div>
+                <div class="pagination" id="monitor-pagination"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        
+        // Store all logs
+        let allThreats = [];
+        let allMonitors = [];
+        let threatPage = 1;
+        let monitorPage = 1;
+        const RECORDS_PER_PAGE = 50;
+
+        // ============= INITIAL DATA ============= #
+
+        // Update threat logs (initial load)
+        socket.on('update_threat_logs', function(msg) {
+            allThreats = msg.data;
+            threatPage = 1;
+            displayThreatLogs();
+        });
+
+        // Update monitor logs (initial load)
+        socket.on('update_monitor_logs', function(msg) {
+            allMonitors = msg.data;
+            monitorPage = 1;
+            displayMonitorLogs();
+        });
+
+        // ============= REAL-TIME UPDATES (CHANGE STREAMS) ============= #
+
+        // NEW: Listen for new threat logs (Change Stream event)
+        socket.on('new_threat_log', function(msg) {
+            const newThreat = msg.data;
+            allThreats.unshift(newThreat);  // Add to beginning (newest first)
+            threatPage = 1;  // Reset to page 1
+            displayThreatLogs();
+            showNotification('🚨 New threat detected!');
+        });
+
+        // NEW: Listen for new monitor logs (Change Stream event)
+        socket.on('new_monitor_log', function(msg) {
+            const newMonitor = msg.data;
+            allMonitors.unshift(newMonitor);  // Add to beginning (newest first)
+            monitorPage = 1;  // Reset to page 1
+            displayMonitorLogs();
+        });
+
+        // ============= DISPLAY FUNCTIONS ============= #
+
+        // Display threat logs with pagination
+        function displayThreatLogs() {
+            const container = document.getElementById('threat-table-container');
+            const paginationContainer = document.getElementById('threat-pagination');
+            
+            if (allThreats.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No threats detected yet</p>
+                    </div>
+                `;
+                paginationContainer.innerHTML = '';
+                document.getElementById('total-detections').textContent = '0';
+                document.getElementById('malware-count').textContent = '0';
+                return;
+            }
+
+            // Calculate pagination
+            const start = (threatPage - 1) * RECORDS_PER_PAGE;
+            const end = start + RECORDS_PER_PAGE;
+            const pageThreats = allThreats.slice(start, end);
+            const totalPages = Math.ceil(allThreats.length / RECORDS_PER_PAGE);
+
+            let html = '<table><thead><tr><th>Timestamp</th><th>File Path</th><th>Confidence</th><th>Action</th><th>Processes Killed</th></tr></thead><tbody>';
+            
+            pageThreats.forEach(threat => {
+                const confidence = (threat.prediction_confidence * 100).toFixed(2);
+                const confidenceClass = confidence > 90 ? 'confidence-high' : confidence > 70 ? 'confidence-medium' : 'confidence-low';
+                
+                html += `
+                    <tr>
+                        <td>${threat.timestamp}</td>
+                        <td><code>${threat.file_path}</code></td>
+                        <td><span class="confidence ${confidenceClass}">${confidence}%</span></td>
+                        <td><span class="badge badge-danger">${threat.action_taken}</span></td>
+                        <td>${threat.processes_killed.length > 0 ? threat.processes_killed.join(', ') : 'None'}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+
+            // Pagination controls
+            let paginationHtml = `<div class="pagination-info">Showing ${start + 1}-${Math.min(end, allThreats.length)} of ${allThreats.length} records</div>`;
+            
+            if (threatPage > 1) {
+                paginationHtml += `<button class="btn-secondary" onclick="loadThreatPage(${threatPage - 1})">← Previous</button>`;
+            }
+            
+            if (threatPage < totalPages) {
+                paginationHtml += `<button class="btn-secondary" onclick="loadThreatPage(${threatPage + 1})">Load More (${Math.min(RECORDS_PER_PAGE, allThreats.length - end)}) →</button>`;
+            }
+            
+            paginationContainer.innerHTML = paginationHtml;
+
+            document.getElementById('total-detections').textContent = allThreats.length;
+            document.getElementById('malware-count').textContent = allThreats.length;
+        }
+
+        // Display monitor logs with pagination
+        function displayMonitorLogs() {
+            const container = document.getElementById('monitor-table-container');
+            const paginationContainer = document.getElementById('monitor-pagination');
+            
+            if (allMonitors.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>No files monitored yet</p>
+                    </div>
+                `;
+                paginationContainer.innerHTML = '';
+                document.getElementById('total-monitored').textContent = '0';
+                return;
+            }
+
+            // Calculate pagination
+            const start = (monitorPage - 1) * RECORDS_PER_PAGE;
+            const end = start + RECORDS_PER_PAGE;
+            const pageMonitors = allMonitors.slice(start, end);
+            const totalPages = Math.ceil(allMonitors.length / RECORDS_PER_PAGE);
+
+            let html = '<table><thead><tr><th>Timestamp</th><th>File Path</th><th>Event</th><th>Prediction</th><th>Confidence</th></tr></thead><tbody>';
+            
+            pageMonitors.forEach(monitor => {
+                const confidence = (monitor.confidence * 100).toFixed(2);
+                const badge = monitor.prediction === 'malware' ? 'badge-danger' : 'badge-success';
+                const confidenceClass = confidence > 90 ? 'confidence-high' : confidence > 70 ? 'confidence-medium' : 'confidence-low';
+                
+                html += `
+                    <tr>
+                        <td>${monitor.timestamp}</td>
+                        <td><code>${monitor.file_path}</code></td>
+                        <td><span class="badge badge-info">${monitor.event_type}</span></td>
+                        <td><span class="badge ${badge}">${monitor.prediction.toUpperCase()}</span></td>
+                        <td><span class="confidence ${confidenceClass}">${confidence}%</span></td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+
+            // Pagination controls
+            let paginationHtml = `<div class="pagination-info">Showing ${start + 1}-${Math.min(end, allMonitors.length)} of ${allMonitors.length} records</div>`;
+            
+            if (monitorPage > 1) {
+                paginationHtml += `<button class="btn-secondary" onclick="loadMonitorPage(${monitorPage - 1})">← Previous</button>`;
+            }
+            
+            if (monitorPage < totalPages) {
+                paginationHtml += `<button class="btn-secondary" onclick="loadMonitorPage(${monitorPage + 1})">Load More (${Math.min(RECORDS_PER_PAGE, allMonitors.length - end)}) →</button>`;
+            }
+            
+            paginationContainer.innerHTML = paginationHtml;
+
+            document.getElementById('total-monitored').textContent = allMonitors.length;
+        }
+
+        // ============= PAGINATION ============= #
+
+        function loadThreatPage(page) {
+            threatPage = page;
+            displayThreatLogs();
+            document.getElementById('threat-table-container').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function loadMonitorPage(page) {
+            monitorPage = page;
+            displayMonitorLogs();
+            document.getElementById('monitor-table-container').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // ============= NOTIFICATIONS ============= #
+
+        socket.on('notification', function(msg) {
+            showNotification(msg.message);
+        });
+
+        function showNotification(message) {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // ============= ACTIONS ============= #
+
+        function clearThreats() {
+            if (confirm('Are you sure you want to clear all threat logs?')) {
+                socket.emit('clear_threat_logs');
+            }
+        }
+
+        function clearMonitors() {
+            if (confirm('Are you sure you want to clear all monitor logs?')) {
+                socket.emit('clear_monitor_logs');
+            }
+        }
+
+        function downloadThreats() {
+            socket.emit('download_threat_logs');
+        }
+
+        function downloadMonitors() {
+            socket.emit('download_monitor_logs');
+        }
+
+        socket.on('trigger_download', function(msg) {
+            const data = msg.data;
+            const filename = msg.filename;
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        });
+    </script>
+</body>
+</html>
