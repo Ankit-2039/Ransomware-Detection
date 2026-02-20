@@ -125,7 +125,7 @@ python-socketio>=5.0.0
 ### Step 1: Clone Repository
 ```bash
 git clone https://github.com/yourusername/ransomware-detection.git
-cd ransomware-detection-rebuilt
+cd ransomware-detection
 ```
 
 ### Step 2: Install Dependencies
@@ -182,7 +182,7 @@ cp /path/to/test.dll testfolder/
 ## 📁 Project Structure
 
 ```
-ransomware-detection-rebuilt/
+ransomware-detection/
 │
 ├── app.py                          # Flask + Socket.IO backend
 ├── file_monitor.py                 # Real-time file monitoring engine
@@ -437,29 +437,6 @@ This project is licensed under the MIT License - see LICENSE file for details.
 
 ---
 
-## ⚠️ Disclaimer
-
-This tool is intended for educational and authorized security testing purposes only. Unauthorized access to computer systems is illegal. Always obtain proper authorization before deploying this system.
-
----
-
-## 👨‍💻 Author
-
-**Ankit Sharma**
-- GitHub: [@Ankit-2039](https://github.com/Ankit-2039)
-- LinkedIn: [Your LinkedIn Profile]
-
----
-
-## 📞 Support
-
-For issues, questions, or suggestions:
-- Open a GitHub Issue
-- Check existing documentation
-- Review troubleshooting section
-
----
-
 ## 🎓 Technical Stack
 
 ```
@@ -516,13 +493,3 @@ Binary Analysis:
 - **Test Samples**: 41,200+
 - **Detection Latency**: <100ms
 - **Dashboard Update Rate**: Real-time
-
----
-
-## ⭐ Show Your Support
-
-If this project helped you, please star it on GitHub!
-
----
-
-**Happy threat detection!** 🛡️
